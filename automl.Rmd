@@ -1,0 +1,442 @@
+---
+title: "Carving out the AutoML niche from Kaggle Survey"
+output:
+  html_document:
+    number_sections: false
+    fig_caption: true
+    toc: true
+    fig_width: 12
+    fig_height: 8
+    highlight: zenburn
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Warning: High_Density of Bar plots; And, Apologies for it, I couldn't get time to improve the visualization / aesthetics** 
+
+### Start
+
+```{r packages, message=FALSE, warning=FALSE, results='hide'}
+library(tidyverse)
+library(highcharter)
+library(scales)
+library(cowplot)
+library(viridis)
+library(wordcloud)
+library(tidytext)
+library(RColorBrewer)
+library(ggrepel)
+
+pal <- brewer.pal(9,"BuGn")
+```
+
+```{r fns, message=FALSE, warning=FALSE, results='hide'}
+
+# loosely based on @kailex's code snippet
+
+make_multi_automl_plot <- function(start = 'Q9_Part_1', end = "Q9_Part_8") {
+  
+  survey_aml %>% 
+    filter(!is.na(automl)) %>% 
+    select(start:end,automl) %>% 
+    pivot_longer(cols = start:end, values_to = "Edu") %>% 
+    drop_na() %>% 
+    select(-name) %>% 
+    filter(Edu != "None") %>% 
+    group_by(Edu, automl) %>% 
+    summarize(freq = n()) %>% 
+    ungroup() %>% 
+    group_by(Edu) %>% 
+    mutate(tot = sum(freq)) %>% 
+    ungroup() %>% #View()
+    ggplot(aes(reorder_within(automl, -freq, Edu), y=freq, fill = factor(Edu))) +                            
+    geom_bar(stat = "identity") +
+    scale_x_reordered() +
+    facet_wrap(~ Edu, scales = "free") + 
+     scale_fill_viridis(discrete = TRUE, alpha=0.7, option="D") +
+    theme_minimal() +
+    labs(x = "", y = "") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position="none") +
+    geom_label_repel(aes(label = paste0(freq, " - ", round(freq/tot*100), "%")),
+                   colour = "gray20", 
+                   size=2.5, vjust = -0.1,  
+    nudge_y      = 0.25,
+    direction    = "y",
+    angle        = 90,
+    segment.size = 0.2,
+    fill = "white"
+  ) 
+}
+  
+make_single_automl_plot <- function(col = "Q9") {
+  
+  survey_aml %>% 
+    filter(!is.na(automl)) %>% 
+    select(col,automl) %>% 
+   # pivot_longer(cols = start:end, values_to = "Edu") %>% 
+    #drop_na() %>% 
+    #select(-name) %>% 
+    rename(Edu = col) %>% 
+    filter(Edu != "None") %>% 
+    group_by(Edu, automl) %>% 
+    summarize(freq = n()) %>% 
+    ungroup() %>% 
+    group_by(Edu) %>% 
+    mutate(tot = sum(freq)) %>% 
+    ungroup() %>% #View()
+    ggplot(aes(reorder_within(automl, -freq, Edu), y=freq, fill = factor(Edu))) +                            
+    geom_bar(stat = "identity") +
+    scale_x_reordered() +
+    facet_wrap(~ Edu, scales = "free") + 
+    scale_fill_viridis(discrete = TRUE, alpha=0.7, option="D") +
+    theme_minimal() +
+    labs(x = "", y = "") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position="none") +
+    geom_label_repel(aes(label = paste0(freq, " - ", round(freq/tot*100), "%"), group = factor(Edu)),
+                   colour = "gray20", 
+                   size=2.5, vjust = -0.1,  
+    nudge_y      = 0.25,
+    direction    = "y",
+    angle        = 90,
+    segment.size = 0.2,
+    fill = "white"
+  ) 
+  
+}
+
+
+```
+
+
+```{r, message = FALSE, warning=FALSE}
+
+#list.files(path = "../input/kaggle-survey-2019/")
+
+path_kaggle = "../input/kaggle-survey-2019/multiple_choice_responses.csv"
+
+path_local = "multiple_choice_responses.csv"
+
+
+survey <- read_csv(path_local, col_types = cols())  %>% 
+  slice(2:n())
+```
+
+# Objective 
+
+Companies like Google, H2O, DataRobot are making huge investments with AutoML as their front cover. In fact, they managed to do well on Gartner's magic quadrant and secure venture funding due the same fact because it sounds revolutionary.
+
+![](https://3gp10c1vpy442j63me73gy3s-wpengine.netdna-ssl.com/wp-content/uploads/2019/01/high-res-981x1024.jpg)
+
+But the real question here is, How receptive the Data science community has been in adopting these AutoML tools? Are they really being used in real life or just being a marketing material? These questions are quite hard to answer at any level. 
+
+This notebook tries to leverage a few questions in the Kaggle 2019 Survey to understand the **who** and **what** part of AutoML.
+
+Considering AutoML itself a very small niche, I've attempted to carve out the niche from this Huge Survey.
+
+# Implictions/Applications of this Kaggle Notebook
+
+Instead of treating this as a mere analysis on AUTOML behavior, this notebook can be extended with multiple practical purposes by the AutoML Providers like Google/H2O/Datarobot
+
++ Marketing 
++ Target Audience Definition 
++ User Persona Creation
++ Usage - Use-case Identification 
++ Driving Adoption 
+
+Let's get started with this bumpy ride of Bar charts!
+
+# Identifying AutoML Niche
+
+We're trying to create a `flag` where if the respondent has answered any AutoML tool for `Q33` (other than `None`) then they are part of AutoML Niche (`True`) and if not, they're not (`False`)
+
+```{r, message = FALSE, warning=FALSE}
+survey %>% 
+    bind_cols(
+      survey %>% 
+        select(Q33_Part_1:Q33_Part_12) %>% 
+        replace(is.na(.), 1) %>%
+        mutate_all(funs(as.numeric(.))) %>% 
+        mutate(sum = rowSums(.[c(1:10,12)]))  %>% 
+        mutate(automl = ifelse(is.na(Q33_Part_11),
+                               FALSE,
+                               ifelse(is.na(sum),TRUE,NA))) %>% 
+        select(automl) 
+    ) -> survey_aml
+```
+
+
+# AutoMl Niche Stats
+
+Only 9% of the entire survey respondents are part of AutoML Niche. While 26% explicitly mentioned they don't use any AutoML, 64% of respondents didn't care to answer this. 
+
+```{r}
+survey_aml %>% 
+  count(automl) %>% 
+  mutate(percent = round(n / sum(n),2)*100) %>% 
+  mutate(automl = ifelse(is.na(automl),"I didn't care to respond",automl)) %>% 
+  rename('automl_niche' ='automl'  ) 
+```
+
+Thus going forward, we'll use only the cases where they're either part of (`True`) of AutoML Niche or Not (`False`) - leaving out the ones that didn't respond any
+
+# What are these AutoML Tools actually?
+
+If you have been watching this space, this plot actually reveals a very important aspect which is **open-source** - the leading solutions in this are primarily open source or like Google AutoML available as trial with a click of a button. 
+
+I think that's a very important aspect for any enterpise to break into the ML developer ecosystem these days. 
+
+```{r}
+survey_aml %>% 
+    filter(automl) %>% 
+    select(starts_with("Q33")) %>% 
+    pivot_longer(cols = 'Q33_Part_1':'Q33_Part_12', values_to = "AutoML") %>% 
+    drop_na() %>% 
+    select(-name) %>% 
+    count(AutoML) %>% 
+    hchart("bar",hcaes(x = AutoML, y = n, color = n))
+```
+
+
+
+# Gender - Nothing Significant
+
+26% of male respondents are part of AutoML Niche while 25% of Female respondents are part of it. It doesn't strike any significant difference in the type of gender and being AutoML enthusiast. 
+
+```{r}
+make_single_automl_plot("Q2") 
+```
+
+# Age - The Youngest ones embrace
+
++ 45% of The Youngest age group of respondents (18-21) has embraced AutoML while in no other age cohort other than 22-24 age bracket AutoML adoption is more than 30% . 
+
++ In fact, the ideal age bracket 25 - 34 where the repondents are concentrated, AutoML Adoption is around 23-24%.
+
++ This fact can also be correlated that AutoML is definitely at its nascent stage but the younger ones are open to emrbace (probably putting their ego of data scientist aside)
+
+```{r}
+make_single_automl_plot("Q1") 
+```
+
+# Country Index - The Emerging ones emerge togethe 
+
+```{r}
+survey_aml %>% 
+  filter(!is.na(automl)) %>% 
+  select(automl, Q3) %>% 
+  count(Q3,automl) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = automl,
+              values_from = n) %>% 
+  mutate(t2f_ratio = round(`TRUE`/`FALSE`,3),
+         total = `TRUE` + `FALSE`) %>% 
+  arrange(desc(t2f_ratio)) -> survey_aml_country
+
+```
+
+Looking at the below table, it's easier to say that there's not a major Kaggle-dominating country in the top 10 countries where automl_adoption-to-no_automl ratio is high. I think,  the point here is exactly the same. It's not the established ML markets being open for the change but countries like *Nigeria*, *Taiwan*, *Indonesia* have been good at receiving this new wave of AutoML.
+
+It's also hidden in this data that 55% of Indian Respondents (who are also a strong Kaggle Dominating community) have been part of AutoML Niche
+
+```{r}
+survey_aml_country %>% slice(1:10)
+```
+
+```{r warning=FALSE}
+survey_aml_country %>% slice(1:15) %>% 
+  hchart("line", hcaes(x = Q3, y = t2f_ratio))
+```
+
+```{r}
+
+x <- c("Country", "Total", "AutoML Yes-No Ratio")
+y <- sprintf("{point.%s}", c("Q3", "total", "t2f_ratio"))
+
+tltip <- tooltip_table(x, y)
+
+
+survey_aml_country %>% 
+    hchart("scatter", hcaes(x = total, y = t2f_ratio,
+                            size = t2f_ratio,
+                            color = total)) %>% 
+    hc_xAxis(type = "logarithmic") %>% 
+    hc_tooltip(useHTML = TRUE, headerFormat = "", pointFormat = tltip) 
+
+```
+
+# Incorporate machine learning methods into their business? 
+
+This again doesn't provide much significant variability between different cohorts but what stands apart is the fact that organizations where they predominantly **generate insights** and also have got **models in PROD for 2+ years** the adoption of AutoML seems high. 
+
+```{r}
+make_single_automl_plot('Q8')
+```
+
+# Role at Work
+
+The roles where they're on working on improving SOTA models and also managing Data Infrastructure is where AutoML is used more.
+
+
+```{r}
+make_multi_automl_plot('Q9_Part_1',"Q9_Part_8")
+```
+
+# Money for Cloud
+
+As it's obvious, The places where the money spent on cloud is lesser is also where the AutoML adoption is lesser. 
+
+```{r}
+make_single_automl_plot("Q11")
+```
+
+# Favorite media sources that report on data science topics
+
++ Kagglers / Respondents who seem to be keeping themselves updated from Blogs such as Towards Data science and Traditional Publications are the least favored ones to use AutoML
+
++ HackerNews-following data scientists and Podcast listeners form the most in AutoML Niche Community.
+
+```{r}
+make_multi_automl_plot("Q12_Part_1","Q12_Part_12")
+```
+
+# Learning Sources
+
++ Whatsoever reason it might be, 39% Data scientists who learn from `Dataquest` have embraced AutoML. Guess, this must be news for Marketing Departments of these AutoML Providers that they can advertise on these platforms. 
+
++ Data Scientists who learn from Coursera are the ones still seem to be least welcoming with AutoML, Quite old-school perhaps. Speaking of which, Data scientists who learn from traditional schools are also least receptive. 
+
+```{r}
+make_multi_automl_plot("Q13_Part_1","Q13_Part_12")
+
+```
+
+# ML Tools - Model Arch, ML Pipelines, Hyperparams 
+
+This is the most important part of this piece I'd say. This is also the place where ML Engineers love to live forever. The algorithms.
+
+The below plot is quite evident in speaking where AutoML users predominatly come from and their interest areas. It's Model Architectures, Hyperparameter tuning, ML Pipelines - all automated. 
+
+```{r}
+make_multi_automl_plot("Q25_Part_1","Q25_Part_8")
+```
+
+# Algorithms? GANs, Evolutionary Approaches, Transformers 
+
+Almost ~44% of data scientists who use GANs (heavily) are the ones who've used AutoML. The same goes with other algorithms that require heavy lifting. 
+
+```{r}
+make_multi_automl_plot("Q24_Part_1","Q24_Part_12")
+```
+
+# TPUs ~ AutoML Niche
+
+This plot is a nice validation to see the idea of the company - Google that pushes AutoML and also offers TPUs.
+
+Almost 78% of those who never used TPUs also never used AutoMLs. Once again resonating the fact that AutoML being preferred by those who normally do heavylifting of algorithms than simply running Linear Models.
+
+```{r}
+make_single_automl_plot("Q22")
+```
+
+# Spark ~ AutoML
+
+48% of Those who use Spark MLLib are part of the AutoML Niche while 72% of those who use Scikit-Learn don't use AutoML. While it could have a lot of overlaps between different libraries. 
+
+This below plot carves out a nice picture of modern deep learning framework users form the better part of AutoML niche than conventional ML framework users. 
+
+```{r}
+make_multi_automl_plot("Q28_Part_1","Q28_Part_12")
+```
+
+# Cloud ~ AutoML
+
+Percentages might not give the real picture in this case. So, let's see through the numbers. Cloud platforms like AWS, GCP, Azure are market leaders. But with this it seems AWS users are the ones not very keen on AutoML while other Cloud Platform users seem to adopt AutoML Tools and solutions.
+
+```{r}
+make_multi_automl_plot("Q29_Part_1","Q29_Part_12")
+```
+# Hosted Notebooks 
+
+
++ Approx 33% of the biggest Hosted Notebook provider (Kaggle & Google Colab) users tend to be part of AutoML niche  
+
++ While other providers may not be as big as the top 2, it's a clear sign that those who are ready to use hosted network at least more than a quarter of them have already adopted AutoML
+
+```{r}
+make_multi_automl_plot("Q17_Part_1","Q17_Part_12")
+```
+
+
+# Language Preferences
+
+What comes as surprise is that % of R users who use AutoML is 4 percent pt. more than Python numbers. While it could be attributed to the very large base number of Python uses in this survey, it'd be an interesting exercise to investigate if it's actually the natural tendency of R users or the limitations of R itself make R programmers embrace AutoML than their Python counterparts
+
+In fact it also seems to be the case of programmers who code in Java, Matlab, C++ and C
+
+Perhaps, the verastility of Python isn't letting Python developers to explore less-geeky territories? Needs a Randomized experiment to answer that ;) 
+
+```{r}
+make_multi_automl_plot("Q18_Part_1","Q18_Part_12")
+```
+
+
+# Few more Bars! 
+
+All these below bars indicate an important part which is **ecosystem** - like, If you're part of GCP already, you're more likely to embrace their AutoML tool because you've already entered the system. 
+
+### Cloud Computing Products
+```{r}
+make_multi_automl_plot("Q30_Part_1","Q30_Part_12")
+```
+
+
+### Big Data
+
+```{r}
+make_multi_automl_plot("Q31_Part_1","Q31_Part_12")
+```
+
+### ML Products
+
+```{r}
+make_multi_automl_plot("Q32_Part_1","Q32_Part_12")
+```
+
+### RDBMS
+
+```{r}
+make_multi_automl_plot("Q34_Part_1","Q34_Part_12")
+```
+
+# FIN
+
+As a result of this analysis, we could manage to conclude a few personas that prefer AutoML
+
++ Young Audience who's willing to try out new things including new technology that can challenge their egos
+
++ ML Engineers who work on powerful heavy lifting tasks 
+
++ Cloud-Friendly Data scientists who have already emrbaced some cloud provider especially GCP/Azure 
+
++ Data scientists who leverage Hosted Notebooks (kinda Cloud)
+
++ Data Scientits whose role involve having Model in Production and also been doing it for quite some time
+
++ ML Engineers working on improving SOTA models
+
+# Way Forward from here - Future Developments
+
++ Usage of Clustering Techniques for Persona Creation
+
++ Creating this as a supervised problem to identify indicators that's driving positive tendency towards AutoML
+
++ Create an AutoML Niche survey in the developing countries as identified above (where we've high Automl-to-No_AutoML ratio) to take those learnings and forward it elswhere
+
++ Create a randomized experiment with the two set of audience we created to establish causality and other driving behaviors
+
+# Credit
+
+Thanks to @Kailex's Notebook (https://www.kaggle.com/kailex/education-languages-and-salary) that helped me get started quickly. Few base-codes used here are loosely borrowed from there, Thanks! 
