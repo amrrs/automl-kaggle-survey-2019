@@ -13,10 +13,8 @@ This notebook tries to leverage a few questions in the Kaggle 2019 Survey to und
 Considering AutoML itself a very small niche, I’ve attempted to carve out the niche from this Huge Survey.
 
 
-### Kaggle Kernel/notebook link
+### Kaggle Kernel/notebook: - [Carving out the AutoML niche from Kaggle Survey](https://www.kaggle.com/nulldata/carving-out-the-automl-niche-from-kaggle-survey)
 
-[**Carving out the AutoML niche from Kaggle Survey**](https://www.kaggle.com/nulldata/carving-out-the-automl-niche-from-kaggle-survey)
-
-### [Dataset](https://www.kaggle.com/c/kaggle-survey-2019)
+### Dataset: [Kaggle Survey 2019](https://www.kaggle.com/c/kaggle-survey-2019)
 
 
